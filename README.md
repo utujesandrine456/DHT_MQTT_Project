@@ -20,9 +20,7 @@ Access the live temperature data from anywhere in the world:
 
 The architecture bridges the gap between local hardware and cloud-based monitoring. Here is a visual representation of how the data flows:
 
-```text
 ![alt text](image.png)
-```
 
 ---
 
