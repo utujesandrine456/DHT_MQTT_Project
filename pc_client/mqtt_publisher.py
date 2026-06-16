@@ -1,95 +1,109 @@
-import serial
+import json
 import time
+from datetime import datetime, timezone
+
+import serial
 import paho.mqtt.client as mqtt
 
-# --- Configuration ---
-# Serial Port Configuration
-# Change 'COM3' to the port your Arduino is connected to (e.g., '/dev/ttyUSB0' on Linux)
-SERIAL_PORT = 'COM3' 
-BAUD_RATE = 9600
+SERIAL_PORT = "COM9"       
 
-# MQTT Broker Configuration
-# We are using a public test broker. For your VPS, change this to your VPS IP/domain.
-MQTT_BROKER = "test.mosquitto.org"
-MQTT_PORT = 1883
-MQTT_TOPIC = "candidate/sensor/temperature"
+BAUD_RATE = 9600                 
 
-# MQTT Callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print(f"Connected to MQTT Broker: {MQTT_BROKER}")
-    else:
-        print(f"Failed to connect to MQTT Broker, return code: {rc}")
+MQTT_BROKER_HOST = "broker.benax.rw" 
+MQTT_BROKER_PORT = 1883         
+MQTT_USERNAME = None            
+MQTT_PASSWORD = None
+MQTT_USE_TLS = False
+MQTT_TOPIC_PREFIX = "exam/uwase_utuje_sandrine"   
+MQTT_CLIENT_ID = "arduino-temp-bridge"
 
-def on_publish(client, userdata, mid):
-    # This callback is fired when a message is successfully published
-    pass
 
-# --- Setup ---
-# Setup MQTT Client
-client = mqtt.Client("PC_Temperature_Publisher")
-client.on_connect = on_connect
-client.on_publish = on_publish
+def sanitize_topic_part(text: str) -> str:
+    """MQTT topics shouldn't contain spaces or '/'; turn the name into a safe slug."""
+    return text.strip().replace(" ", "_").replace("/", "_")
 
-print(f"Connecting to MQTT Broker {MQTT_BROKER}...")
-try:
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    # Start the background thread for MQTT network traffic
-    client.loop_start() 
-except Exception as e:
-    print(f"Error connecting to MQTT Broker: {e}")
-    exit(1)
 
-# Setup Serial Connection
-print(f"Connecting to Serial Port {SERIAL_PORT}...")
-try:
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    time.sleep(2) # Wait for connection to establish
-    print(f"Connected to {SERIAL_PORT}")
-except Exception as e:
-    print(f"Error connecting to Serial Port: {e}")
-    print("Please check if the Arduino is connected and the COM port is correct.")
-    client.loop_stop()
-    exit(1)
-
-# --- Main Loop ---
-print("-" * 30)
-print(f"Listening for data on {SERIAL_PORT} and publishing to {MQTT_TOPIC}...")
-print("Press Ctrl+C to stop.")
-print("-" * 30)
-
-try:
+def connect_serial() -> serial.Serial:
     while True:
-        if ser.in_waiting > 0:
-            # Read line from serial and decode
-            line = ser.readline().decode('utf-8').strip()
-            
-            if line:
-                try:
-                    # Attempt to parse as float to ensure it's a valid temperature reading
-                    temperature = float(line)
-                    print(f"Received Temperature: {temperature} °C")
-                    
-                    # Publish to MQTT
-                    result = client.publish(MQTT_TOPIC, str(temperature))
-                    status = result[0]
-                    if status == 0:
-                        print(f"  -> Successfully published to {MQTT_TOPIC}")
-                    else:
-                        print(f"  -> Failed to publish to {MQTT_TOPIC}")
-                        
-                except ValueError:
-                    # If it's not a float, it might be an initialization message or noise
-                    print(f"Received non-numeric data: {line}")
-                    
-        time.sleep(0.1) # Small delay to prevent high CPU usage
+        try:
+            ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
+            print(f"[Serial] Connected to {SERIAL_PORT} @ {BAUD_RATE} baud")
+            return ser
+        except serial.SerialException as e:
+            print(f"[Serial] Could not open {SERIAL_PORT}: {e}. Retrying in 3s...")
+            time.sleep(3)
 
-except KeyboardInterrupt:
-    print("\nExiting program...")
 
-finally:
-    if 'ser' in locals() and ser.is_open:
+def build_mqtt_client() -> mqtt.Client:
+    client = mqtt.Client(client_id=MQTT_CLIENT_ID)
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    if MQTT_USE_TLS:
+        client.tls_set()
+
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print(f"[MQTT] Connected to {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
+        else:
+            print(f"[MQTT] Connection failed with result code {rc}")
+
+    def on_disconnect(client, userdata, rc):
+        print(f"[MQTT] Disconnected (rc={rc}). Will retry on next loop.")
+
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+
+    client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT, keepalive=30)
+    client.loop_start()   # background thread handles the network loop + auto-reconnect
+    return client
+
+
+def main():
+    ser = connect_serial()
+    mqtt_client = build_mqtt_client()
+
+    print("Listening for temperature readings (Ctrl+C to stop)...\n")
+    try:
+        while True:
+            raw = ser.readline().decode("utf-8", errors="ignore").strip()
+            if not raw:
+                continue
+
+            parts = raw.split(",")
+            if len(parts) == 2:
+                candidate_name, temp_str = parts
+            elif len(parts) == 1:
+                candidate_name = "UWASE UTUJE Sandrine"
+                temp_str = parts[0]
+            else:
+                print(f"[WARN] Unexpected line, skipping: {raw!r}")
+                continue
+            try:
+                temperature = float(temp_str)
+            except ValueError:
+                print(f"[WARN] Could not parse temperature, skipping: {raw!r}")
+                continue
+
+            timestamp = datetime.now(timezone.utc).isoformat()
+            payload = json.dumps({
+                "candidate": candidate_name,
+                "temperature": temperature,
+                "timestamp": timestamp,
+            })
+            topic = f"{MQTT_TOPIC_PREFIX}/{sanitize_topic_part(candidate_name)}"
+
+            mqtt_client.publish(topic, payload, qos=0, retain=False)
+
+            print(f"[{timestamp}] {candidate_name}: {temperature:.2f} C  -> published to '{topic}'")
+
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
         ser.close()
-    client.loop_stop()
-    client.disconnect()
-    print("Connections closed.")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        print("Closed serial port and MQTT connection.")
+
+
+if __name__ == "__main__":
+    main()

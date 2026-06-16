@@ -1,72 +1,76 @@
-#include <LiquidCrystal.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
 
-const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-const int tempPin = A0;
+#define DHTPIN 2
+#define DHTTYPE DHT11
 
-String candidateName = "John Doe - Embedded Systems Candidate  "; 
-int nameLength;
-int scrollPosition = 0;
+DHT dht(DHTPIN, DHTTYPE);
 
-unsigned long previousMillis = 0;
-const long scrollInterval = 400;
+String name = "UWASE UTUJE Sandrine  ";
+int pos = 0;
+
+unsigned long lastScroll = 0;
+unsigned long lastTemp = 0;
+float temp = 0;
 
 void setup() {
-  // Initialize Serial Communication
   Serial.begin(9600);
-  
-  // Initialize LCD (16 columns, 2 rows)
-  lcd.begin(16, 2);
-  
-  nameLength = candidateName.length();
-  
-  // Static display for the second row label if desired, 
-  // but we update the whole row in loop to keep it simple.
+  lcd.init();
+  lcd.backlight();
+  dht.begin();
 }
 
 void loop() {
-  unsigned long currentMillis = millis();
 
-  // 1. Read Temperature
-  // For LM35: 10mV per degree Celsius. 
-  // Analog reading (0-1023) * (5.0V / 1024) = Voltage
-  // Voltage * 100 = Temp in C
-  int rawValue = analogRead(tempPin);
-  float voltage = rawValue * (5.0 / 1023.0);
-  float temperatureC = voltage * 100.0;
+  if (millis() - lastTemp > 2000) {
+    lastTemp = millis();
 
-  // 2. Display Candidate Name with Scrolling (First Row)
-  if (currentMillis - previousMillis >= scrollInterval) {
-    previousMillis = currentMillis;
-    
+    float t = dht.readTemperature();
+
+    if (!isnan(t)) {
+      temp = t;
+    }
+
+    Serial.println(temp);
+  }
+
+  if (name.length() <= 16) {
+
     lcd.setCursor(0, 0);
-    // If name is longer than 16 characters, scroll
-    if (nameLength > 16) {
-      String displayString = "";
+    lcd.print(name);
+
+    for (int i = name.length(); i < 16; i++) {
+      lcd.print(" ");
+    }
+
+  } 
+  else {
+
+    if (millis() - lastScroll > 200) {
+      lastScroll = millis();
+
+      lcd.setCursor(0, 0);
+
+      String line = "";
+
       for (int i = 0; i < 16; i++) {
-        int charIndex = (scrollPosition + i) % nameLength;
-        displayString += candidateName[charIndex];
+        line += name[(pos + i) % name.length()];
       }
-      lcd.print(displayString);
-      scrollPosition = (scrollPosition + 1) % nameLength;
-    } else {
-      // If it fits, just print it padded with spaces
-      lcd.print(candidateName);
-      for(int i = nameLength; i < 16; i++) lcd.print(" ");
+
+      lcd.print(line);
+
+      pos++;
+      if (pos >= name.length()) pos = 0;
     }
   }
 
-  // 3. Display Temperature (Second Row)
   lcd.setCursor(0, 1);
   lcd.print("Temp: ");
-  lcd.print(temperatureC);
-  lcd.print(" C      "); // Padding spaces to clear leftover characters
+  lcd.print(temp);
+  lcd.print(" C   ");
 
-  // 4. Send Temperature over Serial
-  // Sending only the numeric value for easier parsing on PC side
-  // The delay prevents flooding the serial port and gives time for the PC to read
-  Serial.println(temperatureC);
-  
-  delay(100); // Small delay to stabilize readings and serial output
+  delay(500);
 }

@@ -1,79 +1,93 @@
-# Temperature Display and MQTT Monitoring
+# 🌡️ Thermal Monitor: Embedded Temperature System
 
-This project is a simple embedded system that reads temperature data from a sensor via an Arduino Uno, displays it locally on an LCD, and sends it to a PC which then publishes the data to an MQTT broker.
+![Status](https://img.shields.io/badge/Status-Live-brightgreen)
+![Hardware](https://img.shields.io/badge/Hardware-Arduino_Uno-blue)
+![Protocol](https://img.shields.io/badge/Protocol-MQTT-orange)
 
-## System Architecture
+Welcome to the **Thermal Monitor** project! This system seamlessly connects a physical hardware sensor to a modern, globally accessible web dashboard using IoT protocols.
+
+---
+
+## 🔗 Live Dashboard
+
+Access the live temperature data from anywhere in the world:
+> [!TIP]
+> **🌐 Live URL:** [http://157.173.101.159:9277/dashboard.html](http://157.173.101.159:9277/dashboard.html)
+
+---
+
+## 📐 System Architecture
+
+The architecture bridges the gap between local hardware and cloud-based monitoring. Here is a visual representation of how the data flows:
 
 ```mermaid
-graph LR
-    A[Temperature Sensor (LM35)] -->|Analog Voltage| B(Arduino Uno)
-    B -->|I2C / Parallel| C[16x2 LCD Display]
-    B -->|USB Serial| D[PC Program Python]
-    D -->|MQTT Publish| E[(MQTT Broker VPS)]
+flowchart LR
+    subgraph Hardware ["Local Hardware (Your PC)"]
+        A((🌡️ Sensor)) -->|Analog Voltage| B[🔌 Arduino Uno]
+        B -->|I2C / Parallel| C[📺 16x2 LCD Display]
+        B == "Serial Communication (COM9)" ==> D[💻 Python Publisher]
+    end
+
+    subgraph Cloud ["Cloud Infrastructure (VPS)"]
+        D == "MQTT Publish (TCP)" ==> E((☁️ Broker\n broker.benax.rw))
+        E == "MQTT Subscribe (WebSockets)" ==> F[🌐 Web Dashboard]
+    end
 ```
 
-## Communication Details
+---
 
-*   **Serial Communication (Arduino <-> PC):**
-    *   Baud Rate: `9600`
-    *   Data Format: ASCII text representing the temperature float value followed by a newline (e.g., `25.50\r\n`).
-*   **MQTT Topic:**
-    *   `candidate/sensor/temperature`
+## 📡 Communication Details
 
-## Project Structure
+Data moves through two primary communication layers before reaching the dashboard:
 
-*   `arduino/temperature_display/temperature_display.ino`: The Arduino code to read the sensor, scroll the candidate name on the LCD, and print the temperature to Serial.
-*   `pc_client/mqtt_publisher.py`: The Python script to read from the PC's serial port and publish to the MQTT broker.
-*   `pc_client/requirements.txt`: Python dependencies (`pyserial`, `paho-mqtt`).
+1. **Serial Communication (Arduino ↔ PC)**
+   - **Port:** `COM9` (Local Windows PC)
+   - **Baud Rate:** `9600`
+   - **Description:** The Arduino continuously streams the raw temperature reading over the USB serial connection to the Python script.
 
-## Hardware Setup
+2. **MQTT Publishing (PC ↔ Broker ↔ Dashboard)**
+   - **Broker:** `broker.benax.rw`
+   - **Topic:** `exam/uwase_utuje_sandrine/#`
+   - **Description:** The Python script packages the raw serial data into a JSON payload and publishes it over the internet to the MQTT broker, where the remote web dashboard receives it instantly.
 
-1.  **Arduino Uno**
-2.  **LM35 Temperature Sensor**
-    *   VCC to 5V
-    *   GND to GND
-    *   OUT to Analog Pin A0
-3.  **16x2 LCD Display**
-    *   RS to Pin 12
-    *   EN to Pin 11
-    *   D4 to Pin 5
-    *   D5 to Pin 4
-    *   D6 to Pin 3
-    *   D7 to Pin 2
+---
 
-## Software Setup & Execution
+## 📂 Project Structure
 
-### 1. Arduino
-1.  Open `arduino/temperature_display/temperature_display.ino` in the Arduino IDE.
-2.  Select your Arduino Uno board and COM port.
-3.  Compile and upload the code.
-4.  Verify the LCD displays the scrolling name and temperature.
+- `arduino/temperature_display.ino`: The code running on the Arduino that reads the sensor, controls the LCD, and streams serial data.
+- `pc_client/mqtt_publisher.py`: The Python bridge script that reads `COM9` and publishes to the internet.
+- `frontend/dashboard.html`: The modern UI hosted on the cloud server.
 
-### 2. PC Client
-1.  Ensure you have Python 3 installed.
-2.  Open a terminal in the `pc_client` directory.
-3.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  Edit `mqtt_publisher.py`:
-    *   Change `SERIAL_PORT` to match your Arduino's COM port (e.g., `'COM3'`, `'COM4'`, etc.).
-    *   If you have a custom VPS MQTT broker, update the `MQTT_BROKER` variable. It defaults to a public test broker `test.mosquitto.org` for demonstration.
-5.  Run the script:
-    ```bash
-    python mqtt_publisher.py
-    ```
+---
 
-## Screenshots of Successful Execution
+## 🛠️ Hardware Setup Guide
 
-*(Please replace these placeholders with actual screenshots before submitting)*
+To replicate the physical circuit:
 
-1.  **LCD Display:** Showing the scrolling name and temperature.
-    *(Add image here)*
+1. **Arduino Uno** (Microcontroller)
+2. **Temperature Sensor (LM35/DHT)**
+   - `VCC` ➡️ `5V`
+   - `GND` ➡️ `GND`
+   - `OUT` ➡️ `Analog Pin A0`
+3. **16x2 LCD Display**
+   - `RS` ➡️ `Pin 12` | `EN` ➡️ `Pin 11`
+   - `D4` ➡️ `Pin 5` | `D5` ➡️ `Pin 4` | `D6` ➡️ `Pin 3` | `D7` ➡️ `Pin 2`
 
-2.  **PC Terminal:** Showing the script running, reading serial data, and publishing.
-    *(Add image here)*
+---
 
-3.  **MQTT Dashboard:** Showing the incoming data on the broker (using a tool like MQTT Explorer).
-    *(Add image here)*
-"# DHT_MQTT_Project" 
+## 🚀 Execution Instructions
+
+### 1. Arduino Preparation
+Upload your code to your Arduino Uno using the Arduino IDE. Ensure the LCD displays the scrolling candidate name.
+
+### 2. Run the Publisher (Local PC)
+With the Arduino plugged into your computer via USB (`COM9`):
+```bash
+cd pc_client
+pip install -r requirements.txt
+python mqtt_publisher.py
+```
+*(Leave this running locally to act as the bridge!)*
+
+### 3. View the Results
+Navigate to the Live Dashboard link above to see the data stream in real-time.
