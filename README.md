@@ -20,18 +20,47 @@ Access the live temperature data from anywhere in the world:
 
 The architecture bridges the gap between local hardware and cloud-based monitoring. Here is a visual representation of how the data flows:
 
-```mermaid
-flowchart LR
-    subgraph Hardware ["Local Hardware (Your PC)"]
-        A((🌡️ Sensor)) -->|Analog Voltage| B[🔌 Arduino Uno]
-        B -->|I2C / Parallel| C[📺 16x2 LCD Display]
-        B == "Serial Communication (COM9)" ==> D[💻 Python Publisher]
-    end
-
-    subgraph Cloud ["Cloud Infrastructure (VPS)"]
-        D == "MQTT Publish (TCP)" ==> E((☁️ Broker\n broker.benax.rw))
-        E == "MQTT Subscribe (WebSockets)" ==> F[🌐 Web Dashboard]
-    end
+```text
+┌─────────────┐
+│  DHT11      │
+│ Temperature │
+│   Sensor    │
+└──────┬──────┘
+       │
+       │ (Digital Signal)
+       ▼
+┌───────────────────┐
+│   Arduino UNO     │
+│ Reads Temperature │
+└──────┬──────┬─────┘
+       │      │
+       │      │ I2C Protocol
+       │      ▼
+       │  ┌─────────┐
+       │  │ 16x2 LCD│
+       │  │ Display │
+       │  └─────────┘
+       │
+       │ USB Serial
+       ▼
+┌───────────────────┐
+│      Laptop       │
+│ Python Publisher  │
+└─────────┬─────────┘
+          │
+          │ MQTT Protocol
+          ▼
+┌───────────────────┐
+│   MQTT Broker     │
+│     (Cloud)       │
+└─────────┬─────────┘
+          │
+          │ MQTT Protocol
+          ▼
+┌───────────────────┐
+│  Web Dashboard    │
+│ Temperature Graph │
+└───────────────────┘
 ```
 
 ---
